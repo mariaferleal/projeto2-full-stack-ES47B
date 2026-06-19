@@ -6,6 +6,23 @@ const STORAGE_KEY = 'rick-morty-session'
 
 const AuthContext = createContext(null)
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Repete a requisicao quando o fetch falha por erro de rede transitorio
+async function fetchWithRetry(url, options, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await fetch(url, options)
+    } catch (error) {
+      if (attempt === retries) {
+        throw error
+      }
+
+      await delay(300 * (attempt + 1))
+    }
+  }
+}
+
 function getStoredSession() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -26,7 +43,7 @@ export function AuthProvider({ children }) {
     setAuthError('')
 
     try {
-      const response = await fetch(`${API_URL}/login`, {
+      const response = await fetchWithRetry(`${API_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials),
@@ -41,8 +58,12 @@ export function AuthProvider({ children }) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession))
       setSession(nextSession)
     } catch (error) {
-      setAuthError(error.message)
-      throw error
+      const message =
+        error instanceof TypeError
+          ? 'Nao foi possivel conectar ao servidor. Verifique se o backend esta rodando e tente novamente.'
+          : error.message
+      setAuthError(message)
+      throw new Error(message)
     } finally {
       setAuthLoading(false)
     }
